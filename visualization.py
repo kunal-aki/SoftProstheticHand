@@ -1,38 +1,47 @@
 import matplotlib.pyplot as plt
 
 
-def draw_finger(points):
+class FingerVisualizer:
 
-    # Separate x and y coordinates
-    x = [point[0] for point in points]
-    y = [point[1] for point in points]
+    def __init__(self):
 
-    plt.figure(figsize=(6,6))
+        self.fig, self.ax = plt.subplots(figsize=(7,7))
 
-    # Draw finger
-    plt.plot(
-        x,
-        y,
-        '-o',
-        linewidth=4,
-        markersize=8
-    )
+        plt.subplots_adjust(bottom=0.30)
 
-    # Draw joints
-    for i, point in enumerate(points):
-        plt.text(point[0], point[1]+2, f"J{i}")
+    def draw(self, points):
 
-    plt.title("Virtual Prosthetic Finger")
+        self.ax.clear()
 
-    plt.xlabel("X Position (mm)")
-    plt.ylabel("Y Position (mm)")
+        x = [p[0] for p in points]
+        y = [p[1] for p in points]
 
-    plt.grid(True)
+        self.ax.plot(
+            x,
+            y,
+            "-o",
+            linewidth=5,
+            markersize=10
+        )
 
-    plt.axis("equal")
+        for i, p in enumerate(points):
+            self.ax.text(
+                p[0],
+                p[1]+2,
+                f"J{i}"
+            )
 
-    plt.xlim(-20,120)
-    plt.ylim(-20,120)
+        self.ax.set_title(
+            "Soft Prosthetic Finger Simulator"
+        )
 
-    plt.show()
+        self.ax.set_xlim(-30,120)
+        self.ax.set_ylim(-30,120)
+
+        self.ax.set_aspect("equal")
+
+        self.ax.grid(True)
+
+        self.fig.canvas.draw_idle()
+
 

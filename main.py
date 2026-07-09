@@ -1,67 +1,42 @@
 import matplotlib.pyplot as plt
+
 from finger import Finger
 from kinematics import forward_kinematics
+from visualization import FingerVisualizer
+from ui import FingerControls
 
-# Create finger
-index_finger = Finger(
+
+finger = Finger(
     "Index Finger",
     50,
     30,
     20
 )
 
-# Turn interactive mode on
-plt.ion()
+viewer = FingerVisualizer()
 
-figure, ax = plt.subplots(figsize=(6,6))
+controls = FingerControls(viewer.fig)
 
-for angle in range(0, 81, 2):
 
-    # Change finger angles
-    index_finger.set_angles(
-        mcp=angle,
-        pip=angle * 0.75,
-        dip=angle * 0.5
+def update(val):
+
+    finger.set_angles(
+        controls.mcp.val,
+        controls.pip.val,
+        controls.dip.val
     )
 
-    # Calculate joint positions
-    points = forward_kinematics(index_finger)
+    points = forward_kinematics(finger)
 
-    # Separate x and y coordinates
-    x = [point[0] for point in points]
-    y = [point[1] for point in points]
+    viewer.draw(points)
 
-    # Clear previous frame
-    ax.clear()
 
-    # Draw finger
-    ax.plot(
-        x,
-        y,
-        '-o',
-        linewidth=4,
-        markersize=10
-    )
+controls.mcp.on_changed(update)
+controls.pip.on_changed(update)
+controls.dip.on_changed(update)
 
-    # Label joints
-    for i, point in enumerate(points):
-        ax.text(point[0], point[1] + 2, f"J{i}")
+update(None)
 
-    ax.set_title("Virtual Prosthetic Finger")
-
-    ax.set_xlabel("X Position (mm)")
-    ax.set_ylabel("Y Position (mm)")
-
-    ax.grid(True)
-
-    ax.axis("equal")
-
-    ax.set_xlim(-20,120)
-    ax.set_ylim(-20,120)
-
-    plt.pause(0.05)
-
-plt.ioff()
 plt.show()
 
 
