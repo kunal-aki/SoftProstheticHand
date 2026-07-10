@@ -4,69 +4,72 @@ from hand import Hand
 from visualization import HandVisualizer
 
 
-# Create hand model
-prosthetic_hand = Hand()
+hand = Hand()
 
-# Create visualizer
-visualizer = HandVisualizer()
+viewer = HandVisualizer()
 
 
-def update_display():
-    """
-    Redraws the hand after changing finger positions.
-    """
-    visualizer.draw(prosthetic_hand)
+
+def update():
+
+    viewer.draw(hand)
 
 
-def on_key(event):
-    """
-    Keyboard controls for changing grasp patterns.
-    """
+
+def keyboard(event):
 
     if event.key == "1":
+
         print("Open Hand")
-        prosthetic_hand.open_hand()
+        hand.open_hand()
+
 
     elif event.key == "2":
+
         print("Fist")
-        prosthetic_hand.fist()
+        hand.fist()
+
 
     elif event.key == "3":
+
         print("Pinch")
-        prosthetic_hand.pinch()
+        hand.pinch()
+
 
     elif event.key == "4":
-        print("Tripod Grasp")
-        prosthetic_hand.tripod()
 
-    else:
-        return
-
-    update_display()
+        print("Tripod")
+        hand.tripod()
 
 
-# Connect keyboard input to function
-visualizer.fig.canvas.mpl_connect(
+    update()
+
+
+
+viewer.fig.canvas.mpl_connect(
     "key_press_event",
-    on_key
+    keyboard
 )
 
 
-# Initial state
-prosthetic_hand.open_hand()
 
-update_display()
+hand.open_hand()
+
+update()
 
 
-print("-----------------------------")
-print("Virtual Prosthetic Hand")
-print("-----------------------------")
-print("Controls:")
-print("1 - Open Hand")
-print("2 - Fist")
-print("3 - Pinch")
-print("4 - Tripod")
-print("-----------------------------")
+print("""
+3D Prosthetic Hand Simulator
+
+Controls:
+
+1 - Open Hand
+2 - Fist
+3 - Pinch
+4 - Tripod
+
+""")
+
 
 
 plt.show()
