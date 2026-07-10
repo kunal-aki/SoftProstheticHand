@@ -1,116 +1,128 @@
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+import pyvista as pv
+import numpy as np
 
 from kinematics import forward_kinematics_3d
 
 
-class HandVisualizer:
+
+class HandVisualizer3D:
 
 
     def __init__(self):
 
-        self.fig = plt.figure(figsize=(9,9))
+        self.plotter = pv.Plotter()
 
-        self.ax = self.fig.add_subplot(
-            111,
-            projection="3d"
+        self.plotter.set_background(
+            "white"
         )
 
 
-        self.base_positions = {
+    def create_bone(
+        self,
+        start,
+        end,
+        radius=3
+    ):
 
-            "Thumb": (-30,-20,0),
-
-            "Index": (0,0,0),
-
-            "Middle": (20,0,0),
-
-            "Ring": (40,0,0),
-
-            "Pinky": (60,0,0)
-
-        }
+        start=np.array(start)
+        end=np.array(end)
 
 
-        self.colors = {
+        center = (start+end)/2
 
-            "Thumb":"orange",
-            "Index":"red",
-            "Middle":"green",
-            "Ring":"blue",
-            "Pinky":"purple"
-
-        }
+        length=np.linalg.norm(
+            end-start
+        )
 
 
+        cylinder = pv.Cylinder(
+            center=center,
+            direction=end-start,
+            radius=radius,
+            height=length
+        )
 
-    def draw(self, hand):
 
-        self.ax.clear()
+        return cylinder
+
+
+
+    def draw_hand(self, hand):
+
+
+        colors=[
+            "orange",
+            "red",
+            "green",
+            "blue",
+            "purple"
+        ]
+
+
+        bases=[
+
+            (-40,0,0),
+            (-20,0,0),
+            (0,0,0),
+            (20,0,0),
+            (40,0,0)
+
+        ]
 
 
         # Palm
-        palm_x = [-35,70,70,-35,-35]
-        palm_y = [-20,-20,0,0,-20]
-        palm_z = [0,0,0,0,0]
 
+        palm = pv.Box(
+            bounds=(-50,50,-20,20,-10,10)
+        )
 
-        self.ax.plot(
-            palm_x,
-            palm_y,
-            palm_z,
-            color="black",
-            linewidth=5
+        self.plotter.add_mesh(
+            palm,
+            color="tan"
         )
 
 
-        for finger in hand.fingers:
+
+        for index,finger in enumerate(hand.fingers):
 
 
-            base = self.base_positions[finger.name]
-
-
-            points = forward_kinematics_3d(
+            joints = forward_kinematics_3d(
                 finger,
-                base
+                bases[index]
             )
 
 
-            x = [p[0] for p in points]
-            y = [p[1] for p in points]
-            z = [p[2] for p in points]
+            # Bones
+
+            for i in range(len(joints)-1):
+
+                bone=self.create_bone(
+                    joints[i],
+                    joints[i+1]
+                )
 
 
-            self.ax.plot(
-                x,
-                y,
-                z,
-                "-o",
-                linewidth=5,
-                markersize=8,
-                color=self.colors[finger.name],
-                label=finger.name
-            )
+                self.plotter.add_mesh(
+                    bone,
+                    color=colors[index]
+                )
 
 
-        self.ax.set_title(
-            "3D Soft Robotic Prosthetic Hand"
-        )
+            # Joints
+
+            for joint in joints:
+
+                sphere=pv.Sphere(
+                    radius=5,
+                    center=joint
+                )
+
+                self.plotter.add_mesh(
+                    sphere,
+                    color="black"
+                )
 
 
-        self.ax.set_xlabel("X")
-        self.ax.set_ylabel("Y")
-        self.ax.set_zlabel("Z")
-
-
-        self.ax.set_xlim(-60,120)
-        self.ax.set_ylim(-60,80)
-        self.ax.set_zlim(-20,120)
-
-
-        self.ax.legend()
-
-
-        self.fig.canvas.draw_idle()
+        self.plotter.show()
 
 

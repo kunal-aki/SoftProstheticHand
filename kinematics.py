@@ -1,49 +1,91 @@
-import math
+import numpy as np
+from scipy.spatial.transform import Rotation
 
 
-def forward_kinematics_3d(finger, base=(0, 0, 0)):
+def create_rotation(rx, ry, rz):
     """
-    Calculates 3D joint positions for a finger.
-
-    Returns:
-        [
-        (base),
-        (MCP),
-        (PIP),
-        (DIP/tip)
-        ]
+    Creates a 3D rotation matrix
     """
 
-    x0, y0, z0 = base
+    return Rotation.from_euler(
+        "xyz",
+        [rx, ry, rz],
+        degrees=True
+    ).as_matrix()
 
-    # Convert degrees to radians
-    theta1 = math.radians(finger.mcp_angle)
-    theta2 = math.radians(finger.pip_angle)
-    theta3 = math.radians(finger.dip_angle)
+
+
+def forward_kinematics_3d(finger, base_position):
+
+    joints = []
+
+    current_position = np.array(base_position)
+
+    joints.append(current_position.copy())
+
+
+    # Initial finger direction
+    direction = np.array([0,0,1])
+
 
     # MCP rotation
-    x1 = x0 + finger.proximal_length * math.cos(theta1)
-    y1 = y0
-    z1 = z0 + finger.proximal_length * math.sin(theta1)
+    R1 = create_rotation(
+        0,
+        finger.mcp_angle,
+        0
+    )
+
+    direction = R1 @ direction
+
+    current_position = (
+        current_position
+        +
+        direction * finger.proximal_length
+    )
+
+    joints.append(current_position.copy())
 
 
     # PIP rotation
-    x2 = x1 + finger.middle_length * math.cos(theta1 + theta2)
-    y2 = y1
-    z2 = z1 + finger.middle_length * math.sin(theta1 + theta2)
+
+    R2 = create_rotation(
+        0,
+        finger.pip_angle,
+        0
+    )
+
+    direction = R2 @ direction
+
+
+    current_position = (
+        current_position
+        +
+        direction * finger.middle_length
+    )
+
+    joints.append(current_position.copy())
 
 
     # DIP rotation
-    x3 = x2 + finger.distal_length * math.cos(theta1 + theta2 + theta3)
-    y3 = y2
-    z3 = z2 + finger.distal_length * math.sin(theta1 + theta2 + theta3)
+
+    R3 = create_rotation(
+        0,
+        finger.dip_angle,
+        0
+    )
+
+    direction = R3 @ direction
 
 
-    return [
-        (x0, y0, z0),
-        (x1, y1, z1),
-        (x2, y2, z2),
-        (x3, y3, z3)
-    ]
+    current_position = (
+        current_position
+        +
+        direction * finger.distal_length
+    )
+
+    joints.append(current_position.copy())
+
+
+    return joints
 
 
