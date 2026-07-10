@@ -64,9 +64,9 @@ print("""
 3D PROSTHETIC HAND SIMULATOR INITIALIZED (STABLE)
 ===================================================
 1-4 : Presets
-Z/A : MCP Knuckles
-X/S : PIP Middle Joints
-C/D : DIP Tip Joints
+Z/A : Knuckles
+X/S : Middle Joints
+C/D : Tip Joints
 ===================================================
 """)
 
