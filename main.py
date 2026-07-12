@@ -1,6 +1,13 @@
 # main.py
 import pyvista as pv
-import time  # Added for absolute precision delta-time tracking
+import time
+import math
+import numpy as np
+import cv2
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import threading
 from hand import Hand
 from visualization import HandVisualizer3D
 
@@ -19,18 +26,30 @@ target_tendon = {finger.name: 0.0 for finger in hand.fingers}
 target_pressure = {finger.name: 0.0 for finger in hand.fingers}
 actuation_mode = {finger.name: "angle" for finger in hand.fingers} 
 
-# --- TIME-DELTA SMOOTHING VARIABLES ---
-# A lower base coefficient creates a more natural, fluid dampening effect
 SMOOTH_COEFFICIENT = 4.0  
 last_frame_time = time.time()
-
 selected_finger_name = None
+
+# --- NEW MEDIAPIPE TASKS CAMERA ENGINE CONFIG ---
+tracking_mode_active = False
+cap = None
+
+# Build Hand Landmarker configuration targeting local binary graph file
+base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
+options = vision.HandLandmarkerOptions(
+    base_options=base_options,
+    running_mode=vision.RunningMode.IMAGE,
+    num_hands=1,
+    min_hand_detection_confidence=0.7
+)
+vision_hand_engine = vision.HandLandmarker.create_from_options(options)
 
 def update_view():
     viewer.draw_hand(hand)
 
 # --- PRESET TARGET CALCULATORS ---
 def trigger_open():
+    if tracking_mode_active: return
     print("[Preset] Shifting targets to Open...")
     for f in hand.fingers:
         actuation_mode[f.name] = "angle"
@@ -39,6 +58,7 @@ def trigger_open():
         target_angles[f.name]["dip"] = 0.0
 
 def trigger_fist():
+    if tracking_mode_active: return
     print("[Preset] Shifting targets to Fist...")
     for f in hand.fingers: actuation_mode[f.name] = "angle"
     target_angles["Thumb"]["mcp"] = 55.0
@@ -50,7 +70,7 @@ def trigger_fist():
         target_angles[name]["dip"] = 63.0
 
 def trigger_pinch():
-    print("[Preset] Shifting targets to Pinch...")
+    if tracking_mode_active: return
     trigger_open()
     target_angles["Thumb"]["mcp"] = 35.0
     target_angles["Thumb"]["pip"] = 45.0
@@ -59,7 +79,7 @@ def trigger_pinch():
     target_angles["Index"]["dip"] = 42.0
 
 def trigger_tripod():
-    print("[Preset] Shifting targets to Tripod...")
+    if tracking_mode_active: return
     trigger_open()
     target_angles["Thumb"]["mcp"] = 40.0
     target_angles["Thumb"]["pip"] = 50.0
@@ -69,7 +89,7 @@ def trigger_tripod():
         target_angles[name]["dip"] = 42.0
 
 def trigger_cylinder():
-    print("[Preset] Shifting targets to Cylinder...")
+    if tracking_mode_active: return
     for f in hand.fingers: actuation_mode[f.name] = "angle"
     target_angles["Thumb"]["mcp"] = 25.0
     target_angles["Thumb"]["pip"] = 30.0
@@ -79,7 +99,7 @@ def trigger_cylinder():
         target_angles[name]["dip"] = 35.0
 
 def trigger_lateral():
-    print("[Preset] Shifting targets to Lateral Grip...")
+    if tracking_mode_active: return
     for f in hand.fingers: actuation_mode[f.name] = "angle"
     for name in ["Index", "Middle", "Ring", "Pinky"]:
         target_angles[name]["mcp"] = 50.0
@@ -89,7 +109,7 @@ def trigger_lateral():
     target_angles["Thumb"]["pip"] = 20.0
 
 def trigger_hook():
-    print("[Preset] Shifting targets to Hook Grip...")
+    if tracking_mode_active: return
     for f in hand.fingers: actuation_mode[f.name] = "angle"
     target_angles["Thumb"]["mcp"] = 0.0
     target_angles["Thumb"]["pip"] = 10.0
@@ -100,11 +120,13 @@ def trigger_hook():
 
 def select_finger(name):
     global selected_finger_name
+    if tracking_mode_active: return
     selected_finger_name = name
     print(f"[Selection] Domain Focus: {name.upper() if name else 'WHOLE HAND'}")
 
 # --- INPUT AND CONTROL MODIFIERS ---
 def modify_joints(joint_type, direction):
+    if tracking_mode_active: return
     target_names = [selected_finger_name] if selected_finger_name else [f.name for f in hand.fingers]
     for name in target_names:
         actuation_mode[name] = "angle"
@@ -121,6 +143,7 @@ def modify_joints(joint_type, direction):
             target_angles[name]["dip"] = max(0.0, min(80.0, current_target + direction * ANGLE_STEP))
 
 def modify_force_or_pressure(mode, direction):
+    if tracking_mode_active: return
     target_names = [selected_finger_name] if selected_finger_name else [f.name for f in hand.fingers]
     for name in target_names:
         actuation_mode[name] = mode
@@ -129,19 +152,95 @@ def modify_force_or_pressure(mode, direction):
         elif mode == "pressure":
             target_pressure[name] = max(0.0, target_pressure[name] + direction * 5.0)
 
-# --- CINEMATIC TIME-DELTA LOOP MECHANISM ---
+# --- BACKGROUND WEBCAM COMPUTER VISION THREAD ---
+def calculate_3d_joint_angle(pA, pB, pC):
+    v1 = np.array(pA) - np.array(pB)
+    v2 = np.array(pC) - np.array(pB)
+    dot_product = np.dot(v1, v2)
+    norm_v1 = np.linalg.norm(v1)
+    norm_v2 = np.linalg.norm(v2)
+    if norm_v1 == 0 or norm_v2 == 0: return 0.0
+    cosine_angle = dot_product / (norm_v1 * norm_v2)
+    angle_radians = math.acos(max(-1.0, min(1.0, cosine_angle)))
+    flexion_deg = 180.0 - math.degrees(angle_radians)
+    return max(0.0, flexion_deg)
+
+def webcam_vision_worker():
+    global tracking_mode_active, cap, target_angles
+    
+    finger_landmarks = {
+        "Index":  {"mcp": (0, 5, 6),   "pip": (5, 6, 7),   "dip": (6, 7, 8)},
+        "Middle": {"mcp": (0, 9, 10),  "pip": (9, 10, 11), "dip": (10, 11, 12)},
+        "Ring":   {"mcp": (0, 13, 14), "pip": (13, 14, 15),"dip": (14, 15, 16)},
+        "Pinky":  {"mcp": (0, 17, 18), "pip": (17, 18, 19),"dip": (18, 19, 20)},
+        "Thumb":  {"mcp": (0, 1, 2),   "pip": (1, 2, 3),   "dip": (2, 3, 4)}
+    }
+
+    while True:
+        if tracking_mode_active:
+            if cap is None or not cap.isOpened():
+                cap = cv2.VideoCapture(0)
+                time.sleep(0.5)
+                continue
+                
+            success, frame = cap.read()
+            if not success: continue
+            
+            frame = cv2.flip(frame, 1)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Wrap image into modern MediaPipe Tasks layout container
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+            results = vision_hand_engine.detect(mp_image)
+            
+            if results.hand_landmarks:
+                hand_lms = results.hand_landmarks[0]
+                points = [(lm.x, lm.y, lm.z) for lm in hand_lms]
+                
+                for f_name, joints in finger_landmarks.items():
+                    actuation_mode[f_name] = "angle"
+                    
+                    mcp_ang = calculate_3d_joint_angle(points[joints["mcp"][0]], points[joints["mcp"][1]], points[joints["mcp"][2]])
+                    pip_ang = calculate_3d_joint_angle(points[joints["pip"][0]], points[joints["pip"][1]], points[joints["pip"][2]])
+                    dip_ang = calculate_3d_joint_angle(points[joints["dip"][0]], points[joints["dip"][1]], points[joints["dip"][2]])
+                    
+                    if f_name == "Thumb":
+                        target_angles[f_name]["mcp"] = min(55.0, mcp_ang * 2.0)
+                        target_angles[f_name]["pip"] = min(60.0, pip_ang * 1.8)
+                        target_angles[f_name]["dip"] = 0.0
+                    else:
+                        target_angles[f_name]["mcp"] = min(90.0, mcp_ang * 2.2)
+                        target_angles[f_name]["pip"] = min(110.0, pip_ang * 2.0)
+                        target_angles[f_name]["dip"] = 0.7 * target_angles[f_name]["pip"]
+
+            cv2.putText(frame, "LIVE HAND TRACKING ACTIVE (V TO EXIT)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.imshow("Webcam Calibration Feed", frame)
+            cv2.waitKey(1)
+        else:
+            if cap is not None:
+                cap.release()
+                cap = None
+                cv2.destroyAllWindows()
+            time.sleep(0.2)
+
+def toggle_hand_tracking():
+    global tracking_mode_active
+    tracking_mode_active = not tracking_mode_active
+    print(f"[Mode Switch] Camera Hand Tracking Status: {tracking_mode_active}")
+    if not tracking_mode_active:
+        trigger_open()
+
+vision_thread = threading.Thread(target=webcam_vision_worker, daemon=True)
+vision_thread.start()
+
+# --- MASTER STEP TIME-LOOP MECHANISM ---
 def animation_step_callback():
     global last_frame_time
     current_time = time.time()
-    
-    # Calculate how many seconds have actually passed since the last render frame
     dt = current_time - last_frame_time
     last_frame_time = current_time
-    
-    # Cap dt to avoid massive physics jumps if the window is dragged or frozen
     dt = min(dt, 0.1) 
     
-    # Dynamic scaling factor based on real time passed
     lerp_factor = 1.0 - (2.71828 ** (-SMOOTH_COEFFICIENT * dt))
 
     for finger in hand.fingers:
@@ -200,6 +299,7 @@ viewer.plotter.add_key_event("h", lambda: select_finger("Middle"))
 viewer.plotter.add_key_event("j", lambda: select_finger("Ring"))
 viewer.plotter.add_key_event("k", lambda: select_finger("Pinky"))
 viewer.plotter.add_key_event("space", lambda: select_finger(None))
+viewer.plotter.add_key_event("v", toggle_hand_tracking)
 
 trigger_open()
 update_view()
