@@ -1,10 +1,11 @@
 # hand.py
 from finger import Finger
 
+
 class Hand:
     def __init__(self):
         self.fingers = [
-            Finger("Thumb", 22, 16, 0, joint_stiffness=0.25),  
+            Finger("Thumb", 22, 16, 0, joint_stiffness=0.25),
             Finger("Index", 48, 28, 18, joint_stiffness=0.15),
             Finger("Middle", 54, 32, 20, joint_stiffness=0.16),
             Finger("Ring", 48, 30, 18, joint_stiffness=0.14),
@@ -26,7 +27,7 @@ class Hand:
         self.get_finger("Thumb").set_angles(55, 60, 0)
         for name in ["Index", "Middle", "Ring", "Pinky"]:
             # Coupling defaults automatically active via angle clamping inputs
-            self.get_finger(name).set_angles(70, 90, 63) # 63 is 0.7 * 90
+            self.get_finger(name).set_angles(70, 90, 63)  # 63 is 0.7 * 90
 
     def pinch(self):
         self.open_hand()
@@ -56,5 +57,6 @@ class Hand:
         self.get_finger("Thumb").set_angles(0, 10, 0)
         for name in ["Index", "Middle", "Ring", "Pinky"]:
             self.get_finger(name).set_angles(10, 85, 59)
+
 
 
