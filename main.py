@@ -205,14 +205,23 @@ def calculate_3d_joint_angle(pA, pB, pC):
     return max(0.0, flexion_deg)
 
 
-def calculate_wrist_frame(points):
+def calculate_wrist_frame(points, is_right_hand=True):
     """Derives a rigid rotation + translation for the whole hand from the
     wrist and finger-base ("knuckle") landmarks, so the hand model can move
-    and orient itself along with the user's real wrist.
+    and orient itself along with the user's real wrist -- including which
+    way the palm is facing (up/down/toward camera/etc).
 
     points are (x, y, z) landmarks in MediaPipe's normalized image space:
     x/y in [0, 1] (x right, y down), z roughly the same scale, negative
     toward the camera.
+
+    is_right_hand should reflect the user's actual physical hand (see the
+    handedness handling in webcam_vision_worker, which corrects for the
+    horizontal camera flip). The knuckle line (pinky -> index) sweeps in
+    opposite directions for a physical left hand vs a physical right hand,
+    so the palm-normal computation needs to know which one it's looking at
+    to consistently come out pointing out of the palm rather than out of
+    the back of the hand.
     """
     # Convert to a convention matching our 3D model (x right, y up, z toward viewer)
     def conv(p):
@@ -230,8 +239,15 @@ def calculate_wrist_frame(points):
         return None
     y_axis = y_axis / y_norm
 
-    # Lateral reference: across the knuckles (pinky -> index)
-    lateral_ref = index_mcp - pinky_mcp
+    # Lateral reference: across the knuckles. Order it pinky -> index for a
+    # right hand and index -> pinky for a left hand so the cross product
+    # below consistently yields a z_axis that points OUT of the palm (toward
+    # the camera when the palm faces the camera) for either hand.
+    if is_right_hand:
+        lateral_ref = pinky_mcp - index_mcp
+    else:
+        lateral_ref = index_mcp - pinky_mcp
+
     z_axis = np.cross(lateral_ref, y_axis)
     z_norm = np.linalg.norm(z_axis)
     if z_norm < 1e-6:
@@ -289,6 +305,17 @@ def webcam_vision_worker():
                 hand_lms = results.hand_landmarks[0]
                 points = [(lm.x, lm.y, lm.z) for lm in hand_lms]
 
+                # MediaPipe's handedness label is computed on the frame we
+                # actually feed it (already flipped to a mirror/selfie view
+                # above), so it correctly reports the user's physical hand --
+                # e.g. holding up your right hand reports "Right" here.
+                is_right_hand = True
+                if results.handedness:
+                    is_right_hand = (results.handedness[0][0].category_name == "Right")
+                    desired_handedness = "Right" if is_right_hand else "Left"
+                    if viewer.handedness != desired_handedness:
+                        viewer.toggle_handedness()
+
                 for f_name, joints in finger_landmarks.items():
                     actuation_mode[f_name] = "angle"
 
@@ -310,7 +337,7 @@ def webcam_vision_worker():
 
                 # Whole-hand movement: derive wrist position/orientation from
                 # the landmarks so the 3D hand tracks the user's real wrist.
-                wrist_frame = calculate_wrist_frame(points)
+                wrist_frame = calculate_wrist_frame(points, is_right_hand=is_right_hand)
                 if wrist_frame is not None:
                     rotation_matrix, translation = wrist_frame
                     with wrist_lock:
