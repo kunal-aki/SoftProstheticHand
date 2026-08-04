@@ -1,3 +1,4 @@
+[Watch this Video for a Demo!](https://drive.google.com/file/d/1b8ZLbcjNvVg5mhN736mmaAQgd8iFwdWc/view?usp=sharing)
 # Biomechanical Digital Twin Workspace
 
 An interactive, physics-informed 3D digital twin platform for kinematic simulation and real-time computer vision tracking of a prosthetic hand assembly. Built on top of Python, **PyVista (VTK)**, and **MediaPipe**, this platform simulates forward kinematics, tendon-driven forces, soft robotic pressure actuation, and live joint-angle telemetry.
